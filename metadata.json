@@ -1,0 +1,6 @@
+{
+  "name": "MobPlan ERP - Gestão para Móveis Planejados",
+  "description": "Sistema de gestão vertical e SaaS multi-empresa para lojas e fábricas de móveis planejados.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
