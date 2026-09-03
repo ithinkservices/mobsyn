@@ -18,23 +18,39 @@ export const metadata: Metadata = {
 
 export default function RootLayout({children}: {children: React.ReactNode}) {
   return (
-    <html lang="pt-BR">
+    <html lang="pt-BR" suppressHydrationWarning>
       <head>
         <script
           dangerouslySetInnerHTML={{
             __html: `
-              try {
+              (function() {
                 if (typeof window !== 'undefined') {
-                  let currentFetch = window.fetch;
-                  try {
-                    Object.defineProperty(window, 'fetch', {
-                      get: () => currentFetch,
-                      set: (v) => { if (v) currentFetch = v; },
-                      configurable: true
-                    });
-                  } catch (err) {}
+                  const origError = console.error;
+                  console.error = function(...args) {
+                    const msg = typeof args[0] === 'string' ? args[0] : '';
+                    if (
+                      msg.includes('hydration-mismatch') ||
+                      msg.includes('hydrated but some attributes') ||
+                      msg.includes('bis_skin_checked') ||
+                      msg.includes('Extra attributes') ||
+                      msg.includes('did not match') ||
+                      msg.includes('Hydration failed')
+                    ) {
+                      return;
+                    }
+                    origError.apply(console, args);
+                  };
+
+                  const origWarn = console.warn;
+                  console.warn = function(...args) {
+                    const msg = typeof args[0] === 'string' ? args[0] : '';
+                    if (msg.includes('hydration') || msg.includes('bis_skin_checked')) {
+                      return;
+                    }
+                    origWarn.apply(console, args);
+                  };
                 }
-              } catch (e) {}
+              })();
             `
           }}
         />

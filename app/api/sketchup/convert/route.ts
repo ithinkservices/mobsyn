@@ -61,8 +61,7 @@ export async function POST(req: NextRequest) {
            * });
            * const dadosConvertidos = await response.json();
            */
-          const textPreview = new TextDecoder('utf-8', { fatal: false }).decode(fileBytes.slice(0, 4096));
-          resultado = parseSketchUpBinarySkp(textPreview, fileName, file.size);
+          resultado = parseSketchUpBinarySkp(fileBytes, fileName, file.size);
         } else {
           return NextResponse.json(
             { sucesso: false, mensagem: 'Formato não suportado. Envie arquivos .skp ou .json do SketchUp.' },

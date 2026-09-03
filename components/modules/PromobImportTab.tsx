@@ -51,6 +51,8 @@ import {
 import { 
   parseSketchUpJson, 
   parseSketchUpBinarySkp, 
+  gerarEngenhariaOpenCutListFromSkp,
+  calcularResumoOpenCutList,
   ResultadoParseSketchUp,
   EXEMPLO_SKETCHUP_JSON_COZINHA,
   EXEMPLO_SKETCHUP_JSON_DORMITORIO,
@@ -94,7 +96,7 @@ export const PromobImportTab: React.FC<PromobImportTabProps> = ({ negocio }) => 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [feedbackMsg, setFeedbackMsg] = useState<{ tipo: 'sucesso' | 'erro'; texto: string } | null>(null);
+  const [feedbackMsg, setFeedbackMsg] = useState<{ tipo: 'sucesso' | 'erro' | 'aviso'; texto: string } | null>(null);
 
   // Modal de Confirmação para Excluir Arquivo / Projeto Importado
   const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState(false);
@@ -460,8 +462,8 @@ export const PromobImportTab: React.FC<PromobImportTabProps> = ({ negocio }) => 
 
         // Se a API não respondeu ou deu falha de rede (ex: Failed to fetch), roda o motor local cliente imediatamente
         if (!convertidoViaApi || !resultado) {
-          const textPreview = await file.text().catch(() => '');
-          resultado = parseSketchUpBinarySkp(textPreview, fileName, file.size);
+          const arrayBuffer = await file.arrayBuffer().catch(() => new ArrayBuffer(0));
+          resultado = parseSketchUpBinarySkp(arrayBuffer, fileName, file.size);
         }
       } else {
         setFeedbackMsg({ tipo: 'erro', texto: 'Por favor selecione um arquivo .skp, .json ou .csv do OpenCutList.' });
@@ -516,28 +518,25 @@ export const PromobImportTab: React.FC<PromobImportTabProps> = ({ negocio }) => 
       }
 
       // Primeiro upload / projeto novo
-      const { projeto } = importarProjetoSketchUp(negocio.id, resultado);
-      setValorVendaInput(String(projeto.valorVendaDefinido || projeto.valorCalculado || (resultado.custoTotal * 2.2)));
-      setSoftwareOrigemSelecionado('sketchup');
-      setFeedbackMsg({
-        tipo: 'sucesso',
-        texto: `Projeto SketchUp 3D importado com sucesso! ${resultado.totalComponentes} componentes extraídos e modelo 3D carregado.`
-      });
-    } catch (err: any) {
-      console.error('Erro na importação SketchUp:', err);
-      // Fallback garantido caso qualquer coisa lance exceção não prevista
-      try {
-        const fallbackRes = parseSketchUpBinarySkp('', file.name, file.size);
-        const { projeto } = importarProjetoSketchUp(negocio.id, fallbackRes);
-        setValorVendaInput(String(projeto.valorVendaDefinido || projeto.valorCalculado || (fallbackRes.custoTotal * 2.2)));
+      if (resultado.totalComponentes > 0) {
+        const { projeto } = importarProjetoSketchUp(negocio.id, resultado);
+        setValorVendaInput(String(projeto.valorVendaDefinido || projeto.valorCalculado || (resultado.custoTotal * 2.2)));
         setSoftwareOrigemSelecionado('sketchup');
         setFeedbackMsg({
           tipo: 'sucesso',
-          texto: `Projeto SketchUp (${file.name}) processado com sucesso! Peças, ferragens e modelo 3D carregados.`
+          texto: resultado.mensagem || `Projeto SketchUp 3D importado com sucesso! ${resultado.totalComponentes} componentes extraídos e modelo 3D carregado.`
         });
-      } catch {
-        setFeedbackMsg({ tipo: 'erro', texto: `Erro ao importar SketchUp: ${err?.message || 'Arquivo corrompido'}` });
+      } else {
+        // Nenhum componente extraído do binário — orientar o usuário
+        setSoftwareOrigemSelecionado('sketchup');
+        setFeedbackMsg({
+          tipo: 'aviso',
+          texto: resultado.mensagem || `Não foi possível extrair os componentes 3D do arquivo binário .SKP. Para visualizar o modelo 3D corretamente, exporte o projeto do SketchUp usando a Extensão Ruby (Plugins > Exportar JSON Marcenaria) ou o plugin OpenCutList (Exportar CSV).`
+        });
       }
+    } catch (err: any) {
+      console.error('Erro na importação SketchUp:', err);
+      setFeedbackMsg({ tipo: 'erro', texto: `Erro ao importar SketchUp: ${err?.message || 'Arquivo corrompido ou formato não suportado. Exporte o projeto como JSON pela Extensão Ruby do SketchUp.'}` });
     } finally {
       setIsProcessing(false);
     }
@@ -958,11 +957,60 @@ export const PromobImportTab: React.FC<PromobImportTabProps> = ({ negocio }) => 
                   <button
                     type="button"
                     onClick={() => {
-                      const res = parseSketchUpBinarySkp('SketchUp Model Binary SKP Header', 'balcao_marcenaria_900x667x550.skp', 245000);
+                      const csvBancada = `Nº;Designação;Quantidade;Comprimento - Bruto;Largura - Bruta;Espessura - Bruta;Comprimento;Largura;Espessura;Área - final;Tipo de Material;Nome do Material;Descrição do material;URL do material;Nomes de instância;Descrição;URL;Identificação;Comprimento da Borda 1;Comprimento da Borda 2;Largura da Borda 1;Largura da Borda 2;Frente;Verso;Etiquetas
+A;saia;1;250,00 mm;1158,00 mm;18,00 mm;250,00 mm;1158,00 mm;18,00 mm;0,29 m²;Chapa;Areia_guararapes;"";"";"";"";"";"";"";"";"";"";"";"";Layer0
+A;tampo#1;1;1200,00 mm;550,00 mm;18,00 mm;1200,00 mm;550,00 mm;18,00 mm;0,66 m²;Chapa;Masisa_Azul;"";"";"";"";"";"";"";"";"";"";"";"";Layer0
+B;pe_direita;1;717,00 mm;544,00 mm;18,00 mm;717,00 mm;544,00 mm;18,00 mm;0,39 m²;Chapa;Masisa_Azul;"";"";"";"";"";"";"";"";"";"";"";"";Layer0
+C;pe_esquerda;1;717,00 mm;544,00 mm;18,00 mm;717,00 mm;544,00 mm;18,00 mm;0,39 m²;Chapa;Masisa_Azul;"";"";"";"";"";"";"";"";"";"";"";"";Layer0
+A;sapata#1;1;20,00 mm;20,00 mm;18,00 mm;20,00 mm;20,00 mm;18,00 mm;"";Acessório;Ferragens;"";"";sapata copy 003;"";"";"";"";"";"";"";"";"";Layer0
+B;sapata#2;1;20,00 mm;20,00 mm;18,00 mm;20,00 mm;20,00 mm;18,00 mm;"";Acessório;Ferragens;"";"";"";"";"";"";"";"";"";"";"";"";Layer0
+C;sapata#3;1;20,00 mm;20,00 mm;18,00 mm;20,00 mm;20,00 mm;18,00 mm;"";Acessório;Ferragens;"";"";sapata copy 001;"";"";"";"";"";"";"";"";"";Layer0
+D;sapata#4;1;20,00 mm;20,00 mm;18,00 mm;20,00 mm;20,00 mm;18,00 mm;"";Acessório;Ferragens;"";"";sapata copy 002;"";"";"";"";"";"";"";"";"";Layer0`;
+                      processarArquivoOpenCutList(csvBancada, 'bancada_escritorio_opencutlist.csv');
+                    }}
+                    className="px-2.5 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-700 dark:text-amber-300 font-bold text-[11px] border border-amber-500/40 transition-colors cursor-pointer flex items-center gap-1 shadow-xs"
+                    title="Importar projeto real de Bancada OpenCutList com Tampo 1200x550, Pés 717x544, Saia 1158x250 e Sapatas"
+                  >
+                    <Scissors className="w-3.5 h-3.5 text-amber-500" />
+                    <span>⚡ Bancada OpenCutList (Tampo, Pés, Saia & Sapatas)</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const res = parseSketchUpBinarySkp(new ArrayBuffer(0), 'prateleira_suspensa_1000x280x900.skp', 180000);
                       const { projeto } = importarProjetoSketchUp(negocio.id, res);
                       setValorVendaInput(String(projeto.valorVendaDefinido || projeto.valorCalculado || (res.custoTotal * 2.2)));
                       setSoftwareOrigemSelecionado('sketchup');
-                      setFeedbackMsg({ tipo: 'sucesso', texto: 'Arquivo .SKP importado com sucesso via motor OpenCutList! Peças, chapas, fitas e ferragens carregadas.' });
+                      setFeedbackMsg({ tipo: 'sucesso', texto: 'Prateleira Suspensa .SKP importada com sucesso! MDF 25mm e suportes metálicos industriais.' });
+                    }}
+                    className="px-2.5 py-1 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-700 dark:text-emerald-300 font-bold text-[11px] border border-emerald-500/40 transition-colors cursor-pointer flex items-center gap-1 shadow-xs"
+                    title="Importar projeto demo de Prateleira .SKP com MDF 25mm e suportes industriais"
+                  >
+                    <Scissors className="w-3.5 h-3.5 text-emerald-500" />
+                    <span>⚡ Prateleira .SKP (25mm)</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const { itens, components3D } = gerarEngenhariaOpenCutListFromSkp('Balcão Demo OpenCutList 3D', 900, 667, 550, 'Ambiente 3D SketchUp');
+                      let custoTotal = 0;
+                      let totalInstancias = 0;
+                      itens.forEach(it => { totalInstancias += it.quantidade; custoTotal += it.custoTotal; });
+                      const res: ResultadoParseSketchUp = {
+                        sucesso: true, arquivoNome: 'balcao_demo_900x667x550.skp', formato: 'skp',
+                        conversorUtilizado: 'skp_converter_bridge', tamanhoBytes: 245000,
+                        ambientes: ['Ambiente 3D SketchUp'], totalComponentes: itens.length,
+                        totalInstancias, custoTotal: Number(custoTotal.toFixed(2)), itens,
+                        scene3d: { components: components3D, ambienteNome: 'Ambiente 3D SketchUp' },
+                        resumoFabricacao: calcularResumoOpenCutList(itens),
+                        mensagem: 'Projeto demo gerado com sucesso!',
+                      };
+                      const { projeto } = importarProjetoSketchUp(negocio.id, res);
+                      setValorVendaInput(String(projeto.valorVendaDefinido || projeto.valorCalculado || (res.custoTotal * 2.2)));
+                      setSoftwareOrigemSelecionado('sketchup');
+                      setFeedbackMsg({ tipo: 'sucesso', texto: 'Balcão demo OpenCutList 3D importado! Peças, chapas, fitas e ferragens carregadas.' });
                     }}
                     className="px-2.5 py-1 rounded-lg bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-700 dark:text-indigo-300 font-bold text-[11px] border border-indigo-500/40 transition-colors cursor-pointer flex items-center gap-1 shadow-xs"
                     title="Importar projeto nativo .SKP gerando todas as peças, chapas MDF, ferragens e 3D do OpenCutList"
@@ -1032,14 +1080,26 @@ export const PromobImportTab: React.FC<PromobImportTabProps> = ({ negocio }) => 
             </div>
 
             {softwareOrigemSelecionado === 'sketchup' && (
-              <button
-                type="button"
-                onClick={() => setShowRubySnippetModal(true)}
-                className="text-[11px] font-semibold text-cyan-600 dark:text-cyan-400 hover:underline flex items-center gap-1 cursor-pointer"
-              >
-                <Code2 className="w-3.5 h-3.5" />
-                <span>Plugin Ruby para SketchUp</span>
-              </button>
+              <div className="flex items-center gap-2">
+                <a
+                  href="/api/sketchup/plugin-download"
+                  download="mobsyn_exporter.rbz"
+                  className="px-2.5 py-1 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-[11px] transition-colors cursor-pointer flex items-center gap-1.5 shadow-xs"
+                  title="Baixar extensão oficial do MobSyn para SketchUp (.RBZ) instalável em 1 clique"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>📥 Baixar Plugin (.RBZ)</span>
+                </a>
+
+                <button
+                  type="button"
+                  onClick={() => setShowRubySnippetModal(true)}
+                  className="text-[11px] font-semibold text-cyan-600 dark:text-cyan-400 hover:underline flex items-center gap-1 cursor-pointer"
+                >
+                  <Code2 className="w-3.5 h-3.5" />
+                  <span>Como Instalar</span>
+                </button>
+              </div>
             )}
           </div>
         </div>
@@ -1102,10 +1162,12 @@ export const PromobImportTab: React.FC<PromobImportTabProps> = ({ negocio }) => 
           <div className={`mt-3 p-3 rounded-xl text-xs font-semibold flex items-center justify-between ${
             feedbackMsg.tipo === 'sucesso' 
               ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20' 
-              : 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20'
+              : feedbackMsg.tipo === 'aviso'
+                ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20'
+                : 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20'
           }`}>
             <div className="flex items-center gap-2">
-              {feedbackMsg.tipo === 'sucesso' ? <Check className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
+              {feedbackMsg.tipo === 'sucesso' ? <Check className="w-4 h-4" /> : feedbackMsg.tipo === 'aviso' ? <AlertTriangle className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
               <span>{feedbackMsg.texto}</span>
             </div>
             <button onClick={() => setFeedbackMsg(null)} className="text-zinc-400 hover:text-zinc-600 cursor-pointer">
@@ -1116,7 +1178,7 @@ export const PromobImportTab: React.FC<PromobImportTabProps> = ({ negocio }) => 
       </div>
 
       {/* 3. VISUALIZADOR 3D INTERATIVO SKETCHUP (PARTE B) */}
-      {projetoAtual?.modelo3dDados && (
+      {projetoAtual?.modelo3dDados && (projetoAtual.modelo3dDados.components?.length ?? 0) > 0 && (
         <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-4 sm:p-5 shadow-xs space-y-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -1373,19 +1435,51 @@ export const PromobImportTab: React.FC<PromobImportTabProps> = ({ negocio }) => 
 
                   <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
                     {(() => {
-                      const itensChapas = itensDoProjeto.filter(i => {
+                      const isItemFerragem = (i: ItemOrcamento) => {
                         const mat = (i.material || '').toLowerCase();
                         const desc = i.descricao.toLowerCase();
-                        return !mat.includes('ferragem') && !mat.includes('puxador') && !mat.includes('dobradiça') && !desc.includes('puxador') && !desc.includes('dobradiça');
-                      });
+                        return (
+                          (i as any).isFerragem ||
+                          mat.includes('ferrag') ||
+                          mat.includes('sapata') ||
+                          mat.includes('nivelador') ||
+                          mat.includes('puxador') ||
+                          mat.includes('dobradiça') ||
+                          mat.includes('dobradica') ||
+                          mat.includes('calço') ||
+                          mat.includes('calco') ||
+                          mat.includes('corrediça') ||
+                          mat.includes('corredica') ||
+                          mat.includes('acessório') ||
+                          mat.includes('acessorio') ||
+                          desc.includes('sapata') ||
+                          desc.includes('nivelador') ||
+                          desc.includes('puxador') ||
+                          desc.includes('dobradiça') ||
+                          desc.includes('dobradica') ||
+                          desc.includes('calço') ||
+                          desc.includes('calco') ||
+                          desc.includes('corrediça') ||
+                          desc.includes('corredica') ||
+                          desc.includes('passa-fios') ||
+                          desc.includes('cantoneira')
+                        );
+                      };
+
+                      const itensChapas = itensDoProjeto.filter(i => !isItemFerragem(i));
 
                       const grupos: Record<string, { material: string; qtd: number; areaM2: number }> = {};
                       itensChapas.forEach(i => {
-                        const mat = i.material || 'MDF 18mm Branco TX';
+                        const mat = i.material || 'MDF 18mm Padrão';
                         if (!grupos[mat]) grupos[mat] = { material: mat, qtd: 0, areaM2: 0 };
                         grupos[mat].qtd += i.quantidade;
-                        const area = (i.medidas.larguraMm / 1000) * (i.medidas.profundidadeMm / 1000 || i.medidas.alturaMm / 1000 || 0.5);
-                        grupos[mat].areaM2 += Math.max(0.01, area) * i.quantidade;
+
+                        // Ordena as medidas para pegar as duas maiores dimensões de corte da chapa (Comprimento x Largura)
+                        const dim = [i.medidas.larguraMm || 0, i.medidas.alturaMm || 0, i.medidas.profundidadeMm || 0].sort((a, b) => b - a);
+                        const c = dim[0] > 0 ? dim[0] : 600;
+                        const l = dim[1] > 0 ? dim[1] : 400;
+                        const area = (c / 1000) * (l / 1000);
+                        grupos[mat].areaM2 += area * i.quantidade;
                       });
 
                       const lista = Object.values(grupos);
@@ -1393,16 +1487,19 @@ export const PromobImportTab: React.FC<PromobImportTabProps> = ({ negocio }) => 
                         return <p className="text-[11px] text-zinc-400 italic">Nenhuma chapa identificada.</p>;
                       }
 
-                      return lista.map((g, idx) => (
-                        <div key={idx} className="flex items-center justify-between text-xs py-1 border-b border-zinc-200/60 dark:border-zinc-800/60 last:border-0">
-                          <span className="text-zinc-700 dark:text-zinc-300 font-medium truncate max-w-[140px]" title={g.material}>
-                            {g.material}
-                          </span>
-                          <span className="font-mono text-zinc-500 text-[11px] whitespace-nowrap">
-                            {g.qtd} pçs • ~{g.areaM2.toFixed(1)}m² ({Math.max(1, Math.ceil(g.areaM2 / 4.0))} chapa)
-                          </span>
-                        </div>
-                      ));
+                      return lista.map((g, idx) => {
+                        const chapas = Math.max(1, Math.ceil(g.areaM2 / 4.12));
+                        return (
+                          <div key={idx} className="flex items-center justify-between text-xs py-1 border-b border-zinc-200/60 dark:border-zinc-800/60 last:border-0">
+                            <span className="text-zinc-700 dark:text-zinc-300 font-medium truncate max-w-[140px]" title={g.material}>
+                              {g.material}
+                            </span>
+                            <span className="font-mono text-zinc-500 text-[11px] whitespace-nowrap">
+                              {g.qtd} pçs • ~{g.areaM2.toFixed(2)}m² ({chapas} {chapas > 1 ? 'chapas' : 'chapa'})
+                            </span>
+                          </div>
+                        );
+                      });
                     })()}
                   </div>
                 </div>
@@ -1421,33 +1518,89 @@ export const PromobImportTab: React.FC<PromobImportTabProps> = ({ negocio }) => 
 
                   <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
                     {(() => {
-                      let totalMetros = 0;
-                      itensDoProjeto.forEach(i => {
-                        const perimetro = ((i.medidas.larguraMm * 2) + (i.medidas.alturaMm * 2)) / 1000;
-                        totalMetros += perimetro * i.quantidade;
+                      const isItemFerragem = (i: ItemOrcamento) => {
+                        const mat = (i.material || '').toLowerCase();
+                        const desc = i.descricao.toLowerCase();
+                        return (
+                          (i as any).isFerragem ||
+                          mat.includes('ferrag') ||
+                          mat.includes('sapata') ||
+                          mat.includes('nivelador') ||
+                          mat.includes('puxador') ||
+                          mat.includes('dobradiça') ||
+                          mat.includes('dobradica') ||
+                          mat.includes('calço') ||
+                          mat.includes('calco') ||
+                          mat.includes('corrediça') ||
+                          mat.includes('corredica') ||
+                          mat.includes('acessório') ||
+                          mat.includes('acessorio') ||
+                          desc.includes('sapata') ||
+                          desc.includes('nivelador') ||
+                          desc.includes('puxador') ||
+                          desc.includes('dobradiça') ||
+                          desc.includes('dobradica') ||
+                          desc.includes('calço') ||
+                          desc.includes('calco') ||
+                          desc.includes('corrediça') ||
+                          desc.includes('corredica') ||
+                          desc.includes('passa-fios') ||
+                          desc.includes('cantoneira')
+                        );
+                      };
+
+                      const itensMadeira = itensDoProjeto.filter(i => !isItemFerragem(i));
+
+                      if (itensMadeira.length === 0) {
+                        return <p className="text-[11px] text-zinc-400 italic">Nenhuma fita necessária.</p>;
+                      }
+
+                      // Agrupa metragem de fita por acabamento / material real
+                      const gruposFita: Record<string, { nome: string; metros: number }> = {};
+                      let totalLinear = 0;
+
+                      itensMadeira.forEach(i => {
+                        const matNome = i.material || 'MDF Padrão';
+                        const nomeFita = `Fita PVC 1.0mm (${matNome.replace(/^MDF\s*\d*mm\s*/i, '').trim() || 'Padrão'})`;
+
+                        const dim = [i.medidas.larguraMm || 0, i.medidas.alturaMm || 0, i.medidas.profundidadeMm || 0].sort((a, b) => b - a);
+                        const c = dim[0] > 0 ? dim[0] : 600;
+                        const l = dim[1] > 0 ? dim[1] : 400;
+
+                        // Perímetro linear em metros
+                        const desc = i.descricao.toLowerCase();
+                        let metrosItem = 0;
+                        if (desc.includes('tampo') || desc.includes('porta') || desc.includes('frente')) {
+                          metrosItem = ((c * 2) + (l * 2)) / 1000; // 4 topos
+                        } else {
+                          metrosItem = (c + l) / 1000; // 2 topos visíveis
+                        }
+                        const metrosTotalItem = Number((metrosItem * i.quantidade).toFixed(2));
+
+                        if (!gruposFita[nomeFita]) {
+                          gruposFita[nomeFita] = { nome: nomeFita, metros: 0 };
+                        }
+                        gruposFita[nomeFita].metros += metrosTotalItem;
+                        totalLinear += metrosTotalItem;
                       });
+
+                      const listaFitas = Object.values(gruposFita);
 
                       return (
                         <>
-                          <div className="flex items-center justify-between text-xs py-1 border-b border-zinc-200/60 dark:border-zinc-800/60">
-                            <span className="text-zinc-700 dark:text-zinc-300 font-medium">
-                              Fita PVC 1.0mm (Carvalho / Madeirado)
-                            </span>
-                            <span className="font-mono text-cyan-600 dark:text-cyan-400 font-bold text-[11px]">
-                              ~{(totalMetros * 0.45).toFixed(1)} m
-                            </span>
-                          </div>
-                          <div className="flex items-center justify-between text-xs py-1 border-b border-zinc-200/60 dark:border-zinc-800/60">
-                            <span className="text-zinc-700 dark:text-zinc-300 font-medium">
-                              Fita PVC 0.45mm (Branco TX Interno)
-                            </span>
-                            <span className="font-mono text-cyan-600 dark:text-cyan-400 font-bold text-[11px]">
-                              ~{(totalMetros * 0.55).toFixed(1)} m
-                            </span>
-                          </div>
+                          {listaFitas.map((f, idx) => (
+                            <div key={idx} className="flex items-center justify-between text-xs py-1 border-b border-zinc-200/60 dark:border-zinc-800/60 last:border-0">
+                              <span className="text-zinc-700 dark:text-zinc-300 font-medium truncate max-w-[150px]" title={f.nome}>
+                                {f.nome}
+                              </span>
+                              <span className="font-mono text-cyan-600 dark:text-cyan-400 font-bold text-[11px] whitespace-nowrap">
+                                ~{f.metros.toFixed(1)} m
+                              </span>
+                            </div>
+                          ))}
                           <div className="pt-1 text-[10px] text-zinc-400 flex items-center justify-between">
                             <span>Total linear estimado:</span>
-                            <span className="font-mono font-bold text-zinc-900 dark:text-zinc-100">{totalMetros.toFixed(1)} metros</span>
+                            <span className="font-mono font-bold text-zinc-900 dark:text-zinc-100">{totalLinear.toFixed(1)} metros</span>
                           </div>
                         </>
                       );
@@ -1469,28 +1622,44 @@ export const PromobImportTab: React.FC<PromobImportTabProps> = ({ negocio }) => 
 
                   <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
                     {(() => {
-                      const ferragens = itensDoProjeto.filter(i => {
+                      const isItemFerragem = (i: ItemOrcamento) => {
                         const mat = (i.material || '').toLowerCase();
                         const desc = i.descricao.toLowerCase();
-                        return mat.includes('ferragem') || mat.includes('puxador') || mat.includes('dobradiça') || mat.includes('calço') || desc.includes('puxador') || desc.includes('dobradiça') || desc.includes('corrediça') || desc.includes('calço');
-                      });
+                        return (
+                          (i as any).isFerragem ||
+                          mat.includes('ferrag') ||
+                          mat.includes('sapata') ||
+                          mat.includes('nivelador') ||
+                          mat.includes('puxador') ||
+                          mat.includes('dobradiça') ||
+                          mat.includes('dobradica') ||
+                          mat.includes('calço') ||
+                          mat.includes('calco') ||
+                          mat.includes('corrediça') ||
+                          mat.includes('corredica') ||
+                          mat.includes('acessório') ||
+                          mat.includes('acessorio') ||
+                          desc.includes('sapata') ||
+                          desc.includes('nivelador') ||
+                          desc.includes('puxador') ||
+                          desc.includes('dobradiça') ||
+                          desc.includes('dobradica') ||
+                          desc.includes('calço') ||
+                          desc.includes('calco') ||
+                          desc.includes('corrediça') ||
+                          desc.includes('corredica') ||
+                          desc.includes('passa-fios') ||
+                          desc.includes('cantoneira')
+                        );
+                      };
+
+                      const ferragens = itensDoProjeto.filter(i => isItemFerragem(i));
 
                       if (ferragens.length === 0) {
                         return (
-                          <div className="space-y-1">
-                            <div className="flex items-center justify-between text-xs py-0.5">
-                              <span className="text-zinc-600 dark:text-zinc-400">Puxadores Alça Alumínio 128mm</span>
-                              <span className="font-mono font-bold text-zinc-800 dark:text-zinc-200">4 un</span>
-                            </div>
-                            <div className="flex items-center justify-between text-xs py-0.5">
-                              <span className="text-zinc-600 dark:text-zinc-400">Dobradiças c/ Amortecedor</span>
-                              <span className="font-mono font-bold text-zinc-800 dark:text-zinc-200">4 un</span>
-                            </div>
-                            <div className="flex items-center justify-between text-xs py-0.5">
-                              <span className="text-zinc-600 dark:text-zinc-400">Pares Corrediças 500mm</span>
-                              <span className="font-mono font-bold text-zinc-800 dark:text-zinc-200">2 pares</span>
-                            </div>
-                          </div>
+                          <p className="text-[11px] text-zinc-400 italic py-2">
+                            Nenhuma ferragem ou acessório cadastrado neste projeto.
+                          </p>
                         );
                       }
 
@@ -1499,7 +1668,7 @@ export const PromobImportTab: React.FC<PromobImportTabProps> = ({ negocio }) => 
                           <span className="text-zinc-700 dark:text-zinc-300 font-medium truncate max-w-[150px]" title={f.descricao}>
                             {f.descricao}
                           </span>
-                          <span className="font-mono text-amber-600 dark:text-amber-400 font-bold text-[11px]">
+                          <span className="font-mono text-amber-600 dark:text-amber-400 font-bold text-[11px] whitespace-nowrap">
                             {f.quantidade} un • R$ {(f.custoUnitario * f.quantidade).toFixed(2)}
                           </span>
                         </div>
@@ -1583,7 +1752,7 @@ export const PromobImportTab: React.FC<PromobImportTabProps> = ({ negocio }) => 
                           <tr className="border-b border-zinc-200 dark:border-zinc-800 text-[10px] uppercase font-bold text-zinc-400">
                             <th className="py-2 px-2">Cód.</th>
                             <th className="py-2 px-2">Descrição da Peça</th>
-                            <th className="py-2 px-2 text-center">L×A×P (mm)</th>
+                            <th className="py-2 px-2 text-center" title="Comprimento × Largura × Espessura (mm)">Comp × Larg × Esp (mm)</th>
                             <th className="py-2 px-2">Material</th>
                             <th className="py-2 px-2 text-center">Qtd</th>
                             <th className="py-2 px-2 text-right">Custo Unit.</th>
@@ -1974,7 +2143,7 @@ export const PromobImportTab: React.FC<PromobImportTabProps> = ({ negocio }) => 
                       <th className="py-2 px-2">Cód.</th>
                       <th className="py-2 px-2">Descrição Original</th>
                       <th className="py-2 px-2">Ambiente</th>
-                      <th className="py-2 px-2 text-center">L×A×P (mm)</th>
+                      <th className="py-2 px-2 text-center" title="Comprimento × Largura × Espessura (mm)">Comp × Larg × Esp (mm)</th>
                       <th className="py-2 px-2 text-center">Qtd</th>
                       <th className="py-2 px-2 text-right">Custo Orig.</th>
                     </tr>
@@ -2020,23 +2189,26 @@ export const PromobImportTab: React.FC<PromobImportTabProps> = ({ negocio }) => 
         </div>
       )}
 
-      {/* 7. MODAL: EXTENSÃO RUBY DO SKETCHUP (PLUGIN INSTRUCTIONS) */}
+      {/* 7. MODAL: EXTENSÃO RUBY DO SKETCHUP (PLUGIN OFICIAL & INSTALAÇÃO) */}
       {showRubySnippetModal && (
         <div className="fixed inset-0 bg-zinc-950/80 z-60 flex items-center justify-center p-4 backdrop-blur-xs animate-in fade-in">
           <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl w-full max-w-3xl max-h-[88vh] overflow-hidden flex flex-col shadow-2xl">
             <div className="p-4 sm:px-6 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between bg-zinc-50/50 dark:bg-zinc-950/50">
-              <div className="flex items-center gap-2">
-                <Code2 className="w-5 h-5 text-cyan-500" />
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-cyan-500/20 text-cyan-600 dark:text-cyan-400 flex items-center justify-center shadow-xs">
+                  <Cuboid className="w-5 h-5" />
+                </div>
                 <div>
                   <h3 className="text-sm sm:text-base font-bold text-zinc-900 dark:text-zinc-100">
-                    Extensão Ruby para SketchUp (Marcenaria ERP)
+                    Extensão Oficial MobSyn para SketchUp (.RBZ)
                   </h3>
                   <p className="text-xs text-zinc-500">
-                    Instale este plugin no SketchUp para exportar modelos 3D com componentes e medidas milimétricas em 1 clique.
+                    Exporte componentes reais, medidas milimétricas e materiais do SketchUp em 1 clique.
                   </p>
                 </div>
               </div>
               <button
+                type="button"
                 onClick={() => setShowRubySnippetModal(false)}
                 className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 cursor-pointer"
               >
@@ -2045,25 +2217,65 @@ export const PromobImportTab: React.FC<PromobImportTabProps> = ({ negocio }) => 
             </div>
 
             <div className="p-4 sm:p-6 overflow-y-auto space-y-4 flex-1 text-xs">
-              <div className="p-3 bg-cyan-500/10 border border-cyan-500/20 rounded-xl space-y-1 text-cyan-900 dark:text-cyan-300">
-                <p className="font-bold flex items-center gap-1.5">
-                  <Sparkles className="w-4 h-4 text-cyan-500" />
-                  <span>Como Instalar no SketchUp:</span>
-                </p>
-                <ol className="list-decimal list-inside space-y-0.5 text-[11px] text-zinc-600 dark:text-zinc-400">
-                  <li>Copie o script Ruby abaixo.</li>
-                  <li>Salve como um arquivo <span className="font-mono font-bold">marcenaria_export.rb</span> na pasta <span className="font-mono">Plugins</span> do seu SketchUp (ou execute no Console Ruby: Janela &gt; Console Ruby).</li>
-                  <li>No SketchUp, clique no menu <span className="font-bold">Plugins &gt; Marcenaria ERP - Exportar Componentes JSON</span>.</li>
-                  <li>Carregue o arquivo <span className="font-mono">.json</span> gerado aqui no sistema.</li>
-                </ol>
+              {/* Botão de Download em Destaque */}
+              <div className="p-4 bg-gradient-to-r from-cyan-500/10 via-blue-500/10 to-indigo-500/10 border border-cyan-500/30 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-3 shadow-xs">
+                <div>
+                  <h4 className="text-sm font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-cyan-500" />
+                    <span>Download do Arquivo de Instalação (.RBZ)</span>
+                  </h4>
+                  <p className="text-xs text-zinc-500 mt-0.5">
+                    Compatível com SketchUp 2017 até SketchUp 2026 Pro.
+                  </p>
+                </div>
+
+                <a
+                  href="/api/sketchup/plugin-download"
+                  download="mobsyn_exporter.rbz"
+                  className="px-4 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs flex items-center gap-2 shadow-md transition-all shrink-0 cursor-pointer"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>Baixar Extensão (.RBZ)</span>
+                </a>
               </div>
 
-              <div className="relative">
-                <div className="absolute top-2.5 right-2.5">
+              {/* Guia Visual Passo a Passo */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="p-3.5 bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700/60 rounded-xl space-y-1.5">
+                  <div className="w-6 h-6 rounded-lg bg-cyan-500 text-white font-bold text-xs flex items-center justify-center">1</div>
+                  <h5 className="font-bold text-zinc-900 dark:text-zinc-100">Instalar no SketchUp</h5>
+                  <p className="text-[11px] text-zinc-500 leading-relaxed">
+                    No SketchUp, abra <span className="font-semibold text-zinc-800 dark:text-zinc-200">Extensões &gt; Gerenciador de Extensões</span> e clique no botão <span className="font-semibold text-zinc-800 dark:text-zinc-200">Instalar Extensão</span>.
+                  </p>
+                </div>
+
+                <div className="p-3.5 bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700/60 rounded-xl space-y-1.5">
+                  <div className="w-6 h-6 rounded-lg bg-cyan-500 text-white font-bold text-xs flex items-center justify-center">2</div>
+                  <h5 className="font-bold text-zinc-900 dark:text-zinc-100">Exportar em 1 Clique</h5>
+                  <p className="text-[11px] text-zinc-500 leading-relaxed">
+                    Com seu projeto aberto, clique no menu <span className="font-semibold text-zinc-800 dark:text-zinc-200">Plugins &gt; MobSyn &gt; Exportar Projeto (JSON)</span>.
+                  </p>
+                </div>
+
+                <div className="p-3.5 bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700/60 rounded-xl space-y-1.5">
+                  <div className="w-6 h-6 rounded-lg bg-cyan-500 text-white font-bold text-xs flex items-center justify-center">3</div>
+                  <h5 className="font-bold text-zinc-900 dark:text-zinc-100">Soltar no MobSyn</h5>
+                  <p className="text-[11px] text-zinc-500 leading-relaxed">
+                    Arraste o arquivo <span className="font-mono font-bold text-cyan-600 dark:text-cyan-400">.json</span> gerado para esta tela para carregar todas as peças reais e 3D.
+                  </p>
+                </div>
+              </div>
+
+              {/* Opção Avançada: Script Ruby Direto para o Console */}
+              <div className="pt-2">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider">
+                    Código Ruby (Para executar direto no Console Ruby do SketchUp):
+                  </span>
                   <button
                     type="button"
                     onClick={handleCopyRubySnippet}
-                    className="px-2.5 py-1 bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg text-[11px] font-bold flex items-center gap-1 shadow-md transition-colors cursor-pointer"
+                    className="px-2.5 py-1 bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg text-[11px] font-bold flex items-center gap-1 shadow-xs transition-colors cursor-pointer"
                   >
                     {hasCopiedSnippet ? (
                       <>
@@ -2073,13 +2285,13 @@ export const PromobImportTab: React.FC<PromobImportTabProps> = ({ negocio }) => 
                     ) : (
                       <>
                         <Copy className="w-3.5 h-3.5" />
-                        <span>Copiar Código</span>
+                        <span>Copiar Código Ruby</span>
                       </>
                     )}
                   </button>
                 </div>
 
-                <pre className="p-4 rounded-xl bg-zinc-950 text-zinc-300 font-mono text-[11px] overflow-x-auto max-h-72 border border-zinc-800">
+                <pre className="p-4 rounded-xl bg-zinc-950 text-zinc-300 font-mono text-[11px] overflow-x-auto max-h-56 border border-zinc-800">
                   <code>{RUBY_EXTENSION_SKETCHUP_SNIPPET}</code>
                 </pre>
               </div>
@@ -2091,7 +2303,7 @@ export const PromobImportTab: React.FC<PromobImportTabProps> = ({ negocio }) => 
                 onClick={() => setShowRubySnippetModal(false)}
                 className="px-4 py-1.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold cursor-pointer"
               >
-                Entendido
+                Fechar
               </button>
             </div>
           </div>

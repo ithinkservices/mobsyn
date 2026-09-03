@@ -509,6 +509,30 @@ export const SketchupViewer3D: React.FC<SketchupViewer3DProps> = ({
     link.click();
   };
 
+  // Empty state: no components to render
+  if (!sceneData?.components?.length) {
+    return (
+      <div 
+        className={`relative w-full rounded-2xl overflow-hidden border border-zinc-200 dark:border-zinc-800 bg-slate-950 shadow-inner select-none flex items-center justify-center ${className}`}
+        style={{ height: typeof altura === 'number' ? `${altura}px` : altura }}
+      >
+        <div className="text-center space-y-3 px-6 max-w-md">
+          <div className="w-14 h-14 mx-auto rounded-2xl bg-slate-800/80 border border-slate-700 flex items-center justify-center">
+            <Box className="w-7 h-7 text-slate-500" />
+          </div>
+          <p className="text-sm font-semibold text-slate-300">Nenhum componente 3D carregado</p>
+          <p className="text-xs text-slate-500 leading-relaxed">
+            Para visualizar o modelo 3D, exporte seu projeto do SketchUp usando a 
+            <span className="text-cyan-400 font-semibold"> Extensão Ruby </span> 
+            (Plugins → Exportar JSON Marcenaria) ou o plugin 
+            <span className="text-cyan-400 font-semibold"> OpenCutList </span> 
+            (Exportar CSV).
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div 
       ref={containerRef}

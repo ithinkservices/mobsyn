@@ -255,7 +255,7 @@ export const RenderProPresentationModal: React.FC<RenderProPresentationModalProp
               </span>
 
               {/* Se o projeto possuir cena 3D do SketchUp, permite alternar para 3D ao vivo */}
-              {projeto?.modelo3dDados && (
+              {projeto?.modelo3dDados && (projeto.modelo3dDados.components?.length ?? 0) > 0 && (
                 <div className="flex items-center gap-1 bg-zinc-100 dark:bg-zinc-900 p-1 rounded-xl border border-zinc-200 dark:border-zinc-800 text-xs">
                   <button
                     type="button"

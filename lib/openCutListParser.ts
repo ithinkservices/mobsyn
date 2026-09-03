@@ -133,12 +133,13 @@ export function parseMedidaMm(str: string | undefined): number {
 }
 
 /**
- * Analisa e classifica o material e a peça, retornando nome descritivo elegante, cor 3D e categoria
+ * Classificador inteligente de materiais e custos do OpenCutList
  */
 export function classificarMaterialOpenCutList(
-  nomePecaRaw: string,
+  designacaoRaw: string,
   nomeMaterialRaw: string,
-  espessuraMm: number
+  espessuraMm: number = 18,
+  tipoMaterialRaw?: string
 ): {
   materialFormatado: string;
   categoria: OpenCutListPecaRow['categoriaMaterial'];
@@ -146,18 +147,37 @@ export function classificarMaterialOpenCutList(
   isFerragem: boolean;
   custoUnitarioEstimado: number;
 } {
-  const pecaLower = (nomePecaRaw || '').toLowerCase();
+  const pecaLower = (designacaoRaw || '').toLowerCase();
   const matLower = (nomeMaterialRaw || '').toLowerCase();
+  const tipoLower = (tipoMaterialRaw || '').toLowerCase();
 
-  // 1. Ferragens: Calços, Dobradiças, Puxadores, Parafusos
+  // 1. Sapatas, Pés Niveladores e Acessórios
+  if (
+    pecaLower.includes('sapata') || 
+    pecaLower.includes('nivelador') ||
+    (tipoLower.includes('acessório') || tipoLower.includes('acessorio')) && matLower.includes('ferrag')
+  ) {
+    return {
+      materialFormatado: 'Sapata Niveladora 20x20mm (Ferragens)',
+      categoria: 'ferragem_geral',
+      corHex: '#334155',
+      isFerragem: true,
+      custoUnitarioEstimado: 4.50
+    };
+  }
+
+  // 2. Ferragens: Calços, Dobradiças, Puxadores, Parafusos, Corrediças
   if (
     pecaLower.includes('calco') || 
     pecaLower.includes('dobradica') || 
     pecaLower.includes('puxador') || 
+    pecaLower.includes('corredica') ||
     matLower.includes('aluminum') || 
     matLower.includes('lightgray') || 
     matLower.includes('metal') ||
-    pecaLower.includes('corredica')
+    tipoLower.includes('acessório') ||
+    tipoLower.includes('acessorio') ||
+    matLower === 'ferragens'
   ) {
     if (pecaLower.includes('puxador') || matLower.includes('aluminum')) {
       return {
@@ -186,43 +206,70 @@ export function classificarMaterialOpenCutList(
     };
   }
 
-  // 2. Madeira - Caixaria Carvalho Avelã / Amadeirados
+  // 3. Materiais Madeirados e Cores Específicas do OpenCutList
+  if (matLower.includes('areia') || matLower.includes('guararapes')) {
+    return {
+      materialFormatado: `MDF ${espessuraMm || 18}mm Areia Guararapes`,
+      categoria: 'mdf_caixaria',
+      corHex: '#d9cdb8', // Tom areia suave Guararapes
+      isFerragem: false,
+      custoUnitarioEstimado: 78.00
+    };
+  }
+
+  if (matLower.includes('masisa') || matLower.includes('azul') || matLower.includes('blue')) {
+    return {
+      materialFormatado: `MDF ${espessuraMm || 18}mm Masisa Azul Real`,
+      categoria: 'mdf_frentes',
+      corHex: '#2563eb', // Tom azul elegante Masisa
+      isFerragem: false,
+      custoUnitarioEstimado: 92.00
+    };
+  }
+
   if (
     matLower.includes('carvalho') || 
     matLower.includes('avela') || 
     matLower.includes('duratex') || 
     matLower.includes('freijo') ||
-    matLower.includes('louro') ||
-    pecaLower.includes('base') ||
-    pecaLower.includes('lateral_direita') ||
-    pecaLower.includes('lateral_esquerda') ||
-    pecaLower.includes('divisoria')
+    matLower.includes('louro')
   ) {
+    const nomeLimpo = nomeMaterialRaw.replace(/_/g, ' ').trim();
     return {
-      materialFormatado: 'MDF 18mm Carvalho Avelã (Duratex)',
+      materialFormatado: `MDF ${espessuraMm || 18}mm ${nomeLimpo}`,
       categoria: 'mdf_caixaria',
-      corHex: '#9c683b', // tom Carvalho Avelã quente elegante
+      corHex: '#9c683b', // Carvalho Avelã / Freijó quente elegante
       isFerragem: false,
       custoUnitarioEstimado: 85.00
     };
   }
 
-  // 3. Madeira - Gavetas e Travessas Brancas
+  if (matLower.includes('grafite') || matLower.includes('chumbo')) {
+    return {
+      materialFormatado: `MDF ${espessuraMm || 18}mm Grafite Matt`,
+      categoria: 'mdf_frentes',
+      corHex: '#334155',
+      isFerragem: false,
+      custoUnitarioEstimado: 88.00
+    };
+  }
+
+  // 4. Gavetas e Travessas Brancas
   if (
     matLower.includes('branco') || 
-    pecaLower.includes('gaveta') && !pecaLower.includes('frente') ||
+    (pecaLower.includes('gaveta') && !pecaLower.includes('frente')) ||
     pecaLower.includes('contra_')
   ) {
     return {
       materialFormatado: `MDF ${espessuraMm || 18}mm Branco TX`,
       categoria: 'mdf_branco',
-      corHex: '#f1f5f9', // branco suave elegante
+      corHex: '#f1f5f9',
       isFerragem: false,
       custoUnitarioEstimado: 55.00
     };
   }
 
-  // 4. Fundos HDF / MDF 6mm
+  // 5. Fundos HDF / MDF 6mm
   if (
     espessuraMm <= 8 || 
     pecaLower.includes('fundo')
@@ -236,24 +283,21 @@ export function classificarMaterialOpenCutList(
     };
   }
 
-  // 5. Portas e Frentes com Textura / Laca (TURGdGV4dHVyY...)
-  if (
-    matLower.includes('turgdgv') || 
-    pecaLower.includes('porta') || 
-    pecaLower.includes('frente_gaveta')
-  ) {
+  // 6. Nome de Material Customizado no SketchUp
+  if (nomeMaterialRaw && nomeMaterialRaw !== 'Indefinido' && !nomeMaterialRaw.startsWith('<')) {
+    const nomeFormatado = nomeMaterialRaw.replace(/[_-]/g, ' ').trim();
     return {
-      materialFormatado: 'MDF 18mm Texturizado Design (Frentes & Portas)',
-      categoria: 'mdf_frentes',
-      corHex: '#3b4252', // tom grafite/laca elegante
+      materialFormatado: `MDF ${espessuraMm || 18}mm ${nomeFormatado}`,
+      categoria: espessuraMm >= 25 ? 'mdf_caixaria' : 'madeira_geral',
+      corHex: '#8b5a2b',
       isFerragem: false,
-      custoUnitarioEstimado: 95.00
+      custoUnitarioEstimado: 75.00
     };
   }
 
-  // 6. Padrão Geral MDF
+  // 7. Padrão Geral MDF
   return {
-    materialFormatado: `MDF ${espessuraMm || 15}mm Madeirado / Estrutural`,
+    materialFormatado: `MDF ${espessuraMm || 18}mm Padrão`,
     categoria: 'madeira_geral',
     corHex: '#855838',
     isFerragem: false,
@@ -279,48 +323,102 @@ function calcularDimensoesEPosicao3DOpenCutList(
   const l = peca.larguraFinalMm;
   const th = peca.espessuraFinalMm;
 
-  // 1. BASE INFERIOR (900 x 550 x 18 mm)
-  if (pName.includes('base') && !pName.includes('gaveta')) {
+  // A. TAMPO DE MESA / BANCADA (ex: tampo#1 1200x550x18)
+  if (pName.includes('tampo') || pName.includes('mesa_tampo') || pName === 'mesa') {
+    const largTampo = Math.max(c, l);
+    const profTampo = Math.min(c, l);
     return {
-      dimensoes: { larguraMm: c >= l ? c : l, alturaMm: th, profundidadeMm: c >= l ? l : c },
-      posicao: { x: 0, y: th / 2, z: 0 },
-      corHex: '#7c4a27', // Carvalho Avelã elegante
+      dimensoes: { larguraMm: largTampo, alturaMm: th, profundidadeMm: profTampo },
+      posicao: { x: 0, y: 720 + (th / 2), z: 0 },
+      corHex: peca.corHex || '#2563eb',
+      tipo: 'tampo',
+    };
+  }
+
+  // B. PÉS DE BANCADA / ESCRIVANINHA (ex: pe_esquerda, pe_direita 717x544x18)
+  if (pName.includes('pe_') || pName.includes('pé_') || (pName.includes('pe') && (pName.includes('dir') || pName.includes('esq')))) {
+    const isEsq = pName.includes('esquerda') || pName.includes('esq');
+    const altPe = Math.max(c, l);
+    const profPe = Math.min(c, l);
+    const posX = isEsq ? -580 : 580;
+    return {
+      dimensoes: { larguraMm: th, alturaMm: altPe, profundidadeMm: profPe },
+      posicao: { x: posX, y: altPe / 2, z: 0 },
+      corHex: peca.corHex || '#2563eb',
       tipo: 'modulo_baixo',
     };
   }
 
-  // 2. LATERAL ESQUERDA (667 x 550 x 18 mm)
+  // C. SAIA / PAINEL TRASEIRO DE AMARRAÇÃO (ex: saia 1158x250x18)
+  if (pName.includes('saia') || pName.includes('amarra') || pName.includes('painel_traseiro')) {
+    const largSaia = Math.max(c, l);
+    const altSaia = Math.min(c, l);
+    return {
+      dimensoes: { larguraMm: largSaia, alturaMm: altSaia, profundidadeMm: th },
+      posicao: { x: 0, y: 720 - (altSaia / 2), z: -230 },
+      corHex: peca.corHex || '#d9cdb8',
+      tipo: 'modulo_baixo',
+    };
+  }
+
+  // D. SAPATAS NIVELADORAS (ex: sapata#1, sapata#2 20x20x18)
+  if (pName.includes('sapata') || pName.includes('nivelador')) {
+    const isDir = pName.includes('2') || pName.includes('4') || pName.includes('dir');
+    const isFrente = pName.includes('3') || pName.includes('4') || pName.includes('frente');
+    return {
+      dimensoes: { larguraMm: c, alturaMm: th, profundidadeMm: l },
+      posicao: { 
+        x: isDir ? 580 : -580, 
+        y: th / 2, 
+        z: isFrente ? 220 : -220 
+      },
+      corHex: '#334155',
+      tipo: 'outro',
+    };
+  }
+
+  // 1. BASE INFERIOR DE BALCÃO (900 x 550 x 18 mm)
+  if (pName.includes('base') && !pName.includes('gaveta')) {
+    return {
+      dimensoes: { larguraMm: Math.max(c, l), alturaMm: th, profundidadeMm: Math.min(c, l) },
+      posicao: { x: 0, y: th / 2, z: 0 },
+      corHex: peca.corHex || '#7c4a27',
+      tipo: 'modulo_baixo',
+    };
+  }
+
+  // 2. LATERAL ESQUERDA DE BALCÃO (667 x 550 x 18 mm)
   if (pName.includes('lateral_esquerda') && !pName.includes('gaveta')) {
-    const alturaMovel = c >= l ? c : l;
-    const profMovel = c >= l ? l : c;
+    const alturaMovel = Math.max(c, l);
+    const profMovel = Math.min(c, l);
     return {
       dimensoes: { larguraMm: th, alturaMm: alturaMovel, profundidadeMm: profMovel },
       posicao: { x: -450 + (th / 2), y: alturaMovel / 2, z: 0 },
-      corHex: '#7c4a27',
+      corHex: peca.corHex || '#7c4a27',
       tipo: 'modulo_baixo',
     };
   }
 
-  // 3. LATERAL DIREITA (667 x 550 x 18 mm)
+  // 3. LATERAL DIREITA DE BALCÃO (667 x 550 x 18 mm)
   if (pName.includes('lateral_direita') && !pName.includes('gaveta')) {
-    const alturaMovel = c >= l ? c : l;
-    const profMovel = c >= l ? l : c;
+    const alturaMovel = Math.max(c, l);
+    const profMovel = Math.min(c, l);
     return {
       dimensoes: { larguraMm: th, alturaMm: alturaMovel, profundidadeMm: profMovel },
       posicao: { x: 450 - (th / 2), y: alturaMovel / 2, z: 0 },
-      corHex: '#7c4a27',
+      corHex: peca.corHex || '#7c4a27',
       tipo: 'modulo_baixo',
     };
   }
 
   // 4. DIVISÓRIA ESTRUTURAL CENTRAL (667 x 528.3 x 18 mm)
   if (pName.includes('divisoria')) {
-    const alturaDiv = (c >= l ? c : l) - 18;
-    const profDiv = c >= l ? l : c;
+    const alturaDiv = Math.max(c, l) - 18;
+    const profDiv = Math.min(c, l);
     return {
       dimensoes: { larguraMm: th, alturaMm: alturaDiv, profundidadeMm: profDiv },
       posicao: { x: 0, y: 18 + (alturaDiv / 2), z: -10.85 },
-      corHex: '#7c4a27',
+      corHex: peca.corHex || '#7c4a27',
       tipo: 'modulo_baixo',
     };
   }
@@ -328,9 +426,9 @@ function calcularDimensoesEPosicao3DOpenCutList(
   // 5. TRAVESSA DIANTEIRA SUPERIOR (900 x 70 x 15 mm)
   if (pName.includes('travessa_dianteira') || pName.includes('travessa_frontal')) {
     return {
-      dimensoes: { larguraMm: c >= l ? c : l, alturaMm: th, profundidadeMm: c >= l ? l : c },
+      dimensoes: { larguraMm: Math.max(c, l), alturaMm: th, profundidadeMm: Math.min(c, l) },
       posicao: { x: 0, y: 667 - (th / 2), z: 275 - 35 },
-      corHex: '#cbd5e1', // Perfil Alumínio / Madeira Clara
+      corHex: '#cbd5e1',
       tipo: 'modulo_baixo',
     };
   }
@@ -338,7 +436,7 @@ function calcularDimensoesEPosicao3DOpenCutList(
   // 6. TRAVESSA TRASEIRA SUPERIOR (900 x 90 x 15 mm)
   if (pName.includes('travessa_traseira')) {
     return {
-      dimensoes: { larguraMm: c >= l ? c : l, alturaMm: th, profundidadeMm: c >= l ? l : c },
+      dimensoes: { larguraMm: Math.max(c, l), alturaMm: th, profundidadeMm: Math.min(c, l) },
       posicao: { x: 0, y: 667 - (th / 2), z: -275 + 45 },
       corHex: '#cbd5e1',
       tipo: 'modulo_baixo',
@@ -348,9 +446,9 @@ function calcularDimensoesEPosicao3DOpenCutList(
   // 7. FUNDO TRASEIRO DO MÓVEL (879 x 682 x 6 mm)
   if (pName === 'fundo' || pName.includes('fundo_chapa') || pName.includes('fundo_traseiro')) {
     return {
-      dimensoes: { larguraMm: c >= l ? c : l, alturaMm: 655, profundidadeMm: th || 6 },
+      dimensoes: { larguraMm: Math.max(c, l), alturaMm: Math.min(c, l), profundidadeMm: th || 6 },
       posicao: { x: 0, y: 333.5, z: -275 + 3 },
-      corHex: '#e2e8f0', // HDF 6mm
+      corHex: '#e2e8f0',
       tipo: 'painel',
     };
   }
@@ -363,12 +461,12 @@ function calcularDimensoesEPosicao3DOpenCutList(
     return {
       dimensoes: { larguraMm: largPrat, alturaMm: th || 15, profundidadeMm: profPrat },
       posicao: { x: isDir ? 220.5 : -220.5, y: 230, z: -10 },
-      corHex: '#f1f5f9', // Branco interno suave
+      corHex: '#f1f5f9',
       tipo: 'modulo_baixo',
     };
   }
 
-  // 9. FRENTES DE GAVETA SUPERIORES (Lado a Lado: Esquerda e Direita) (444 x 137 x 18 mm)
+  // 9. FRENTES DE GAVETA SUPERIORES (444 x 137 x 18 mm)
   if (pName.includes('frente_gaveta')) {
     const isDir = pName.includes('_b') || pName.includes('dir') || pName.includes('2');
     const largFrente = Math.max(c, l);
@@ -376,12 +474,12 @@ function calcularDimensoesEPosicao3DOpenCutList(
     return {
       dimensoes: { larguraMm: largFrente, alturaMm: altFrente, profundidadeMm: th || 18 },
       posicao: { x: isDir ? 223 : -223, y: 580, z: 275 + 9 },
-      corHex: '#d7cbbe', // Tom Linho / Nude idêntico ao modelo de referência
+      corHex: '#d7cbbe',
       tipo: 'gaveteiro',
     };
   }
 
-  // 10. PORTAS INFERIORES (Lado a Lado: Esquerda e Direita) (513 x 444 x 18 mm)
+  // 10. PORTAS INFERIORES (513 x 444 x 18 mm)
   if (pName.includes('porta')) {
     const isDir = pName.includes('direita') || pName.includes('dir') || pName.includes('_b') || pName.includes('2');
     const altPorta = Math.max(c, l);
@@ -389,35 +487,34 @@ function calcularDimensoesEPosicao3DOpenCutList(
     return {
       dimensoes: { larguraMm: largPorta, alturaMm: altPorta, profundidadeMm: th || 18 },
       posicao: { x: isDir ? 223 : -223, y: 18 + (altPorta / 2), z: 275 + 9 },
-      corHex: '#d7cbbe', // Tom Linho / Nude idêntico ao modelo de referência
+      corHex: '#d7cbbe',
       tipo: 'modulo_baixo',
     };
   }
 
-  // 11. PUXADORES HORIZONTAIS DAS GAVETAS (128 x 25 x 10 mm)
+  // 11. PUXADORES HORIZONTAIS DAS GAVETAS
   if (pName.includes('puxador') && pName.includes('gaveta')) {
     const isDir = pName.includes('_b') || pName.includes('2') || pName.includes('dir');
     return {
       dimensoes: { larguraMm: 128, alturaMm: 14, profundidadeMm: 22 },
       posicao: { x: isDir ? 223 : -223, y: 580, z: 284 + 14 },
-      corHex: '#475569', // Alumínio anodizado acetinado
+      corHex: '#475569',
       tipo: 'outro',
     };
   }
 
-  // 12. PUXADORES VERTICAIS DAS PORTAS (128 x 25 x 10 mm)
+  // 12. PUXADORES VERTICAIS DAS PORTAS
   if (pName.includes('puxador')) {
     const isDir = pName.includes('2') || pName.includes('dir') || pName.includes('direita');
     return {
       dimensoes: { larguraMm: 14, alturaMm: 128, profundidadeMm: 22 },
-      // Puxador vertical próximo ao centro / encontro das portas
       posicao: { x: isDir ? 45 : -45, y: 470, z: 284 + 14 },
       corHex: '#475569',
       tipo: 'outro',
     };
   }
 
-  // 13. GAVETAS INTERNAS: Laterais (510 x 125 x 18 mm)
+  // 13. GAVETAS INTERNAS: Laterais
   if (pName.includes('lateral_') && pName.includes('gaveta')) {
     const isDirMovel = pName.includes('_b') || pName.includes('2');
     const isLateralEsq = pName.includes('esquerda');
@@ -427,12 +524,12 @@ function calcularDimensoesEPosicao3DOpenCutList(
     return {
       dimensoes: { larguraMm: th || 18, alturaMm: Math.min(c, l), profundidadeMm: Math.max(c, l) },
       posicao: { x: posX, y: 575, z: 10 },
-      corHex: '#f1f5f9', // Branco interno
+      corHex: '#f1f5f9',
       tipo: 'gaveteiro',
     };
   }
 
-  // 14. GAVETAS INTERNAS: Contra-Frente e Contra-Fundo (360 x 120 x 18 mm)
+  // 14. GAVETAS INTERNAS: Contra-Frente e Contra-Fundo
   if (pName.includes('contra_frente') || pName.includes('contra_fundo')) {
     const isDirMovel = pName.includes('_b') || pName.includes('2');
     const isFrente = pName.includes('contra_frente');
@@ -444,7 +541,7 @@ function calcularDimensoesEPosicao3DOpenCutList(
     };
   }
 
-  // 15. GAVETAS INTERNAS: Fundo Gaveta HDF 6mm (489 x 375 x 6 mm)
+  // 15. GAVETAS INTERNAS: Fundo Gaveta
   if (pName.includes('fundo_gaveta')) {
     const isDirMovel = pName.includes('_b') || pName.includes('2');
     return {
@@ -455,7 +552,7 @@ function calcularDimensoesEPosicao3DOpenCutList(
     };
   }
 
-  // 16. CALÇOS E DOBRADIÇAS (65 x 51 x 18 mm)
+  // 16. CALÇOS E DOBRADIÇAS
   if (pName.includes('calco') || pName.includes('dobradica')) {
     const isDir = pName.includes('direita') || pName.includes('dir');
     const isInf = pName.includes('#1') || pName.includes('1') || pName.includes('inf');
@@ -468,14 +565,14 @@ function calcularDimensoesEPosicao3DOpenCutList(
   }
 
   // Fallback inteligente baseado em proporções
-  let dimX = Math.max(c, l);
-  let dimY = Math.min(c, l);
-  let dimZ = th || 18;
+  const dimX = Math.max(c, l);
+  const dimY = Math.min(c, l);
+  const dimZ = th || 18;
 
   return {
     dimensoes: { larguraMm: dimX, alturaMm: dimY, profundidadeMm: dimZ },
-    posicao: { x: (index - 10) * 80, y: 350, z: 0 },
-    corHex: '#7c4a27',
+    posicao: { x: (index - 5) * 60, y: 350, z: 0 },
+    corHex: peca.corHex || '#7c4a27',
     tipo: 'outro',
   };
 }
@@ -498,7 +595,7 @@ export function parseOpenCutListCsv(csvContent: string, nomeArquivo: string = 'p
       throw new Error('Formato do OpenCutList inválido ou sem dados de peças.');
     }
 
-    // Detecta o delimitador (; ou ,)
+    // Detecta o delimitador (; ou , ou tab)
     const headerLine = lines[0];
     const delimiter = headerLine.includes(';') ? ';' : headerLine.includes('\t') ? '\t' : ',';
     const headerCols = headerLine.split(delimiter).map(c => c.replace(/^["']|["']$/g, '').trim().toLowerCase());
@@ -515,7 +612,7 @@ export function parseOpenCutListCsv(csvContent: string, nomeArquivo: string = 'p
       largura: headerCols.findIndex(c => c === 'largura' || c.includes('width')),
       espessura: headerCols.findIndex(c => c === 'espessura' || c.includes('thickness')),
       areaFinal: headerCols.findIndex(c => c.includes('área') || c.includes('area')),
-      tipoMaterial: headerCols.findIndex(c => c.includes('tipo de material') || c.includes('material type')),
+      tipoMaterial: headerCols.findIndex(c => c.includes('tipo de material') || c.includes('material type') || c.includes('tipo')),
       nomeMaterial: headerCols.findIndex(c => c.includes('nome do material') || c.includes('material name') || c === 'material'),
       descricaoMaterial: headerCols.findIndex(c => c.includes('descrição do material') || c.includes('descricao material')),
       instancia: headerCols.findIndex(c => c.includes('nomes de instância') || c.includes('instancia')),
@@ -555,12 +652,19 @@ export function parseOpenCutListCsv(csvContent: string, nomeArquivo: string = 'p
       custoTotal: number;
     }>();
 
+    // Nome base do ambiente a partir do arquivo
+    const nomeLimpoArquivo = nomeArquivo
+      .replace(/\.(csv|txt|skp|json)$/i, '')
+      .replace(/[_-]/g, ' ')
+      .replace(/plano corte|opencutlist|export/gi, '')
+      .trim();
+    const ambientePadrao = nomeLimpoArquivo.length >= 3 ? nomeLimpoArquivo : 'Bancada / Escritório';
+
     // Processar cada linha do CSV
     for (let i = 1; i < lines.length; i++) {
       const lineStr = lines[i];
       if (!lineStr.trim()) continue;
 
-      // Split com suporte a aspas duplas
       const cols = lineStr.split(delimiter).map(c => c.replace(/^["']|["']$/g, '').trim());
 
       const numVal = colIndex.numero >= 0 ? cols[colIndex.numero] : String(i);
@@ -575,17 +679,23 @@ export function parseOpenCutListCsv(csvContent: string, nomeArquivo: string = 'p
       const largFinal = colIndex.largura >= 0 ? parseMedidaMm(cols[colIndex.largura]) : (largBruta || 400);
       const espFinal = colIndex.espessura >= 0 ? parseMedidaMm(cols[colIndex.espessura]) : (espBruta || 18);
 
+      const tipoMatRaw = colIndex.tipoMaterial >= 0 ? cols[colIndex.tipoMaterial] : '';
       const matRaw = colIndex.nomeMaterial >= 0 ? cols[colIndex.nomeMaterial] : (cols[11] || 'MDF Padrão');
-      const etiquetaRaw = colIndex.etiquetas >= 0 ? cols[colIndex.etiquetas] : 'Ambiente Principal';
+      const etiquetaRaw = colIndex.etiquetas >= 0 ? cols[colIndex.etiquetas] : '';
 
       const ambiente = etiquetaRaw && etiquetaRaw !== 'Layer0' && etiquetaRaw !== 'Untagged' 
         ? etiquetaRaw 
-        : 'Balcão Cozinha / Módulo Principal';
+        : ambientePadrao;
       ambientesSet.add(ambiente);
 
-      // Classificação inteligente
-      const classif = classificarMaterialOpenCutList(desigVal, matRaw, espFinal);
-      const areaM2Item = Number(((compFinal * largFinal) / 1000000).toFixed(4));
+      // Classificação inteligente de material
+      const classif = classificarMaterialOpenCutList(desigVal, matRaw, espFinal, tipoMatRaw);
+
+      // Para chapas de marcenaria, comprimento é a maior dimensão, largura a menor
+      const compCorte = classif.isFerragem ? compFinal : Math.max(compFinal, largFinal);
+      const largCorte = classif.isFerragem ? largFinal : Math.min(compFinal, largFinal);
+
+      const areaM2Item = Number(((compCorte * largCorte) / 1000000).toFixed(4));
       const areaTotalItem = Number((areaM2Item * qtdVal).toFixed(4));
 
       // Cálculo de fita de borda
@@ -595,16 +705,17 @@ export function parseOpenCutListCsv(csvContent: string, nomeArquivo: string = 'p
       const bL2 = colIndex.bordaL2 >= 0 ? cols[colIndex.bordaL2] : '';
 
       let bordasMetros = 0;
-      if (bC1) bordasMetros += compFinal / 1000;
-      if (bC2) bordasMetros += compFinal / 1000;
-      if (bL1) bordasMetros += largFinal / 1000;
-      if (bL2) bordasMetros += largFinal / 1000;
-      // Se não especificado no CSV mas for peça externa (portas/frentes/laterais), estima fitas
+      if (bC1) bordasMetros += compCorte / 1000;
+      if (bC2) bordasMetros += compCorte / 1000;
+      if (bL1) bordasMetros += largCorte / 1000;
+      if (bL2) bordasMetros += largCorte / 1000;
+
+      // Se não especificado no CSV mas for peça externa, estima fitas de borda nos topos visíveis
       if (bordasMetros === 0 && !classif.isFerragem) {
-        if (desigVal.toLowerCase().includes('porta') || desigVal.toLowerCase().includes('frente')) {
-          bordasMetros = ((compFinal * 2) + (largFinal * 2)) / 1000; // 4 lados
-        } else if (desigVal.toLowerCase().includes('lateral') || desigVal.toLowerCase().includes('base')) {
-          bordasMetros = (compFinal + largFinal) / 1000; // 2 lados (topo frontal + topo superior)
+        if (desigVal.toLowerCase().includes('tampo') || desigVal.toLowerCase().includes('porta') || desigVal.toLowerCase().includes('frente')) {
+          bordasMetros = ((compCorte * 2) + (largCorte * 2)) / 1000; // 4 lados
+        } else if (desigVal.toLowerCase().includes('pe') || desigVal.toLowerCase().includes('lateral') || desigVal.toLowerCase().includes('saia')) {
+          bordasMetros = (compCorte + largCorte) / 1000; // 2 lados visíveis
         }
       }
 
@@ -614,7 +725,6 @@ export function parseOpenCutListCsv(csvContent: string, nomeArquivo: string = 'p
       // Custo Real Calculado
       let custoUnitario = classif.custoUnitarioEstimado;
       if (!classif.isFerragem) {
-        // Custo proporcional ao m² + custo de fita de borda
         const custoM2Base = espFinal === 6 ? 45 : espFinal === 15 ? 75 : 95;
         const custoFitaMetro = 3.50;
         custoUnitario = Number((areaM2Item * custoM2Base + bordasMetros * custoFitaMetro + 12).toFixed(2));
@@ -662,7 +772,7 @@ export function parseOpenCutListCsv(csvContent: string, nomeArquivo: string = 'p
         larguraFinalMm: largFinal,
         espessuraFinalMm: espFinal,
         areaFinalM2: areaM2Item,
-        tipoMaterial: cols[colIndex.tipoMaterial] || 'MDF/Chapa',
+        tipoMaterial: tipoMatRaw || (classif.isFerragem ? 'Acessório' : 'Chapa'),
         nomeMaterial: matRaw,
         materialFormatado: classif.materialFormatado,
         categoriaMaterial: classif.categoria,
@@ -676,12 +786,19 @@ export function parseOpenCutListCsv(csvContent: string, nomeArquivo: string = 'p
 
       // Calcular Dimensões e Posição 3D Paramétrica do Móvel
       const geom3d = calcularDimensoesEPosicao3DOpenCutList(pecaRow, i);
-      const codigoUnico = `OCL-${String(i).padStart(2, '0')}-${desigVal.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 8)}`;
+      const codigoUnico = `OCL-${String(i).padStart(3, '0')}`;
+
+      // Formata descrição limpa (ex: "tampo#1" -> "Tampo 1", "pe_direita" -> "Pé Direito", "saia" -> "Saia")
+      const descricaoFormatada = desigVal
+        .replace(/_/g, ' ')
+        .replace(/#/g, ' ')
+        .replace(/\b\w/g, l => l.toUpperCase())
+        .trim();
 
       componentes3D.push({
         id: `ocl_comp_${i}_${Date.now()}`,
         codigo: codigoUnico,
-        nome: desigVal.replace(/_/g, ' '),
+        nome: descricaoFormatada,
         ambiente,
         dimensoes: geom3d.dimensoes,
         posicao: geom3d.posicao,
@@ -692,13 +809,13 @@ export function parseOpenCutListCsv(csvContent: string, nomeArquivo: string = 'p
 
       itensResultado.push({
         codigo: codigoUnico,
-        descricao: desigVal.replace(/_/g, ' '),
+        descricao: descricaoFormatada,
         ambiente,
-        larguraMm: largFinal,
-        alturaMm: compFinal,
+        larguraMm: compCorte,
+        alturaMm: largCorte,
         profundidadeMm: espFinal,
         material: classif.materialFormatado,
-        acabamento: totalBordaItem > 0 ? `Fita de Borda (${totalBordaItem}m)` : 'Sem fita',
+        acabamento: classif.isFerragem ? 'Niquelado / Aço Polímero' : (totalBordaItem > 0 ? `Fita PVC 1.0mm (${totalBordaItem}m)` : 'Fita PVC 1.0mm'),
         quantidade: qtdVal,
         custoUnitario,
         custoTotal: custoTotalItem,
@@ -712,8 +829,6 @@ export function parseOpenCutListCsv(csvContent: string, nomeArquivo: string = 'p
     }
 
     const materiaisAgrupados = Array.from(materiaisMap.values()).map(m => {
-      // 1 Chapa padrão de MDF tem 2.75m x 1.83m = 5.03 m²
-      // Considerando aproveitamento médio de corte de 82% (18% perda de corte de serra/refilo)
       const areaUtilChapa = 5.03 * 0.82;
       const chapasEstimadas = Math.max(1, Math.ceil(m.areaM2 / areaUtilChapa));
       return {
@@ -724,7 +839,7 @@ export function parseOpenCutListCsv(csvContent: string, nomeArquivo: string = 'p
 
     const ferragensAgrupadas = Array.from(ferragensMap.values());
     const ambientes = Array.from(ambientesSet);
-    if (ambientes.length === 0) ambientes.push('Módulo Balcão OpenCutList');
+    if (ambientes.length === 0) ambientes.push(ambientePadrao);
 
     const resumoFabricacao: ResumoOpenCutList = {
       totalPecasMadeira: countMadeira,
@@ -751,15 +866,10 @@ export function parseOpenCutListCsv(csvContent: string, nomeArquivo: string = 'p
       scene3d: {
         components: componentes3D,
         ambienteNome: ambientes[0],
-        dimensoesGerais: {
-          larguraTotalMm: 900,
-          alturaTotalMm: 685,
-          profundidadeTotalMm: 550
-        }
       },
       resumoFabricacao,
       rawContent: csvContent,
-      mensagem: `Importação OpenCutList concluída com sucesso! ${countMadeira} peças de marcenaria e ${countFerragens} ferragens identificadas com plano de corte e cores.`
+      mensagem: `Importação do OpenCutList concluída! ${itensResultado.length} peças processadas com sucesso.`,
     };
   } catch (err: any) {
     return {
@@ -781,9 +891,9 @@ export function parseOpenCutListCsv(csvContent: string, nomeArquivo: string = 'p
         totalBordasMetros: 0,
         custoTotal: 0,
         materiaisAgrupados: [],
-        ferragensAgrupadas: []
+        ferragensAgrupadas: [],
       },
-      mensagem: `Erro ao processar arquivo OpenCutList: ${err?.message || 'Formato inválido'}`
+      mensagem: `Falha ao ler arquivo CSV do OpenCutList: ${err?.message || 'Arquivo inválido'}`,
     };
   }
 }
